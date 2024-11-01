@@ -1,0 +1,418 @@
+---
+title: "ICTMM"
+author: "Faez"
+date: "2024-04-23"
+output: html_document
+---
+
+```{r download and unpack library}
+rm(list = ls())
+library(pacman)
+p_load(ggplot2,tidyr,dplyr,ggsci,sjPlot,data.table,ggsignif)
+library(knitr)
+library(ggstatsplot)
+```
+
+```{r import csv files}
+dilution_factor_test<-read.csv("/Users/Faez/Folder_yoy/RA_TIDREC UM 2023/Realtime PCR_NCOV/Quantstudio 5/ICTMM - Project/qPCR results/23-4-2024/Determining_DF.csv")
+dilution_factor_test_select<-dilution_factor_test%>%select(c("Sample","Cq.Mean","Cq.SD","Quantity.Mean","Quantity.SD"))
+dilution_factor_test_select<-dilution_factor_test_select[c(1,3,5,7,9),]
+
+
+
+```
+
+```{r bar chart for viral load}
+dilution_factor_test_select<-dilution_factor_test_select[order(-dilution_factor_test_select$Quantity.Mean),]
+dilution_factor_test_select<-dilution_factor_test_select%>%relocate(Quantity.SD,.after = Quantity.Mean)
+dilution_factor_test_select_times5<-dilution_factor_test_select%>%mutate(Quantity.Mean=Quantity.Mean*5,Quantity.SD=Quantity.SD*5)
+multiplication_factors <- c(8/5, 8/4, 8/3, 8/2, 8/1)
+dilution_factor_test_viral_load<-data.frame(ID=dilution_factor_test_select_times5$Sample,Viral_load=dilution_factor_test_select_times5$Quantity.Mean*multiplication_factors,Viral_load_SD=dilution_factor_test_select_times5$Quantity.SD*multiplication_factors,Ct_value=dilution_factor_test_select_times5$Cq.Mean,Ct_value_SD=dilution_factor_test_select_times5$Cq.SD)
+##reorder
+dilution_factor_test_viral_load<-dilution_factor_test_viral_load[order(-dilution_factor_test_viral_load$Viral_load),]
+##export as csv
+write.csv(dilution_factor_test_select_times5,"SampleKL017_viral_load_test_dilution_factor.csv",row.names = FALSE)
+
+##plot bar chart
+barchart_viral_load_df<-ggplot(dilution_factor_test_select_times5,aes(x=reorder(Sample,-Quantity.Mean),y=Quantity.Mean))+
+  geom_bar(stat = "identity",width = 0.5,fill="gray",color="black",linewidth=0.8)+
+  geom_errorbar(aes(ymin = Quantity.Mean - Quantity.SD, ymax = Quantity.Mean + Quantity.SD),                width = 0.2)+
+  labs(x="Sample (Dilution factor)",y = "Viral load (copy numbers)", title = "Viral load between Different Dilution Factor") +
+  theme_sjplot2()+
+  theme(plot.title = element_text(hjust = 0.5),axis.text.x = element_text(angle = 45,hjust = 1))+
+  ylim(0,500)
+ggsave("Barchart_sampleKL017_dilutionfactortest.png",plot = barchart_viral_load_df,width = 6,height = 4,dpi = 350,bg="white")
+
+##try plot line graph for Ct value
+ggplot(dilution_factor_test_select_times5, aes(x = reorder(Sample, +Cq.Mean), y = Cq.Mean)) +
+  geom_line(color = "blue", linewidth = 1.5)
+
+```
+
+```{r bar chart for sample KB 628, 638, eval=FALSE}
+KBSA_628_638<-read.csv("/Users/Faez/Folder_yoy/RA_TIDREC UM 2023/Realtime PCR_NCOV/Quantstudio 5/ICTMM - Project/Data_analysis/Sample_KBSA628_638_25-4-2024.csv")
+
+KBSA_628_638_times5<-KBSA_628_638%>%mutate(Quantity.Mean=Quantity.Mean*5,Quantity.SD=Quantity.SD*5)
+KBSA_628_638_real_value<-KBSA_628_638_times5%>%mutate(Quantity.Mean=Quantity.Mean*(8/2),Quantity.SD=Quantity.SD*(8/2))
+
+ggplot(KBSA_628_638_real_value,aes(x=reorder(Sample,-Quantity.Mean),y=Quantity.Mean))+
+  geom_bar(stat = "identity",width = 0.5,fill="gray",color="black",linewidth=0.8)+
+  geom_errorbar(aes(ymin = Quantity.Mean - Quantity.SD, ymax = Quantity.Mean + Quantity.SD),                width = 0.2)+
+  labs(x="Sample",y = "Viral load (copy numbers)", title = "Viral load between Different Dilution Factor") +
+  theme_sjplot2()+
+  theme(plot.title = element_text(hjust = 0.5),axis.text.x = element_text(angle = 45,hjust = 1))+
+  ylim(0,400000)
+
+
+```
+
+```{r McNemar test for positivity comparison between saliva and OPS, eval=FALSE}
+
+##load raw data
+ICTMM_full_data<-read.csv("/Users/Faez/Folder_yoy/RA_TIDREC UM 2023/Realtime PCR_NCOV/Quantstudio 5/ICTMM - Project/Data_analysis/ICTMM project - Results.csv")
+##load edited data
+ICTMM_full_edited<-read.csv("/Users/Faez/Folder_yoy/RA_TIDREC UM 2023/Realtime PCR_NCOV/Quantstudio 5/ICTMM - Project/Data_analysis/ICTMM project - Results_edited.csv")
+
+##omit sample KB 034 and KJ 054
+ICTMM_full_edited_cleaned<-ICTMM_full_edited[-c(81,54,10,37),]
+##rename undetermined with NA
+ICTMM_full_edited_cleaned[] <- lapply(ICTMM_full_edited_cleaned, function(x) ifelse(x == "Undetermined", NA, x))
+##replace V and SA in Sample column with ""
+ICTMM_full_edited_cleaned$Sample<-gsub("V","",ICTMM_full_edited_cleaned$Sample)
+ICTMM_full_edited_cleaned$Sample<-gsub("SA","",ICTMM_full_edited_cleaned$Sample)
+##relocate sample type column
+ICTMM_full_edited_cleaned<-ICTMM_full_edited_cleaned%>%relocate(Sample.type,.after=Sample)
+##remove column 7,8
+ICTMM_full_edited_cleaned<-ICTMM_full_edited_cleaned[,-c(7,8)]
+##add log viral load (Copies/uL)
+str(ICTMM_full_edited_cleaned$Cq.Mean)
+ICTMM_full_edited_cleaned$Quantity.Mean<-as.numeric(as.character(ICTMM_full_edited_cleaned$Quantity.Mean))
+ICTMM_full_edited_cleaned$Quantity.SD<-as.numeric(as.character(ICTMM_full_edited_cleaned$Quantity.SD))
+ICTMM_full_edited_cleaned <- ICTMM_full_edited_cleaned %>%
+  mutate(log.viral.load = if_else(is.na(Quantity.Mean) | Quantity.Mean <= 0, NA_real_, log(Quantity.Mean)))
+##remove sd column
+ICTMM_full_edited_cleaned<-ICTMM_full_edited_cleaned[,-c(4,6)]
+##reshape data
+ICTMM_full_edited_wide <- ICTMM_full_edited_cleaned %>%
+  pivot_wider(
+    names_from = Sample.type,
+    values_from = c(Quantity.Mean, Cq.Mean, log.viral.load))
+
+
+##Perform McNemar test (no need mcnemar, just PPA, NPA, discordance)
+##CREATE TAB FIRST
+ICTMM_full_edited_wide <- ICTMM_full_edited_wide %>%
+  mutate(Saliva_Positive = as.numeric(Cq.Mean_Saliva <= 35),
+    Swab_Positive = as.numeric(`Cq.Mean_Oral swab` <= 35))
+
+Mcnemartable<-table(Saliva.test = ICTMM_full_edited_wide$Saliva_Positive, Swab.test = ICTMM_full_edited_wide$Swab_Positive)
+Mcnemarresult<-mcnemar.test(Mcnemartable)
+print(Mcnemarresult)
+test_statistic <- Mcnemarresult$statistic
+results_df <- data.frame(
+  Metric = c("Test Statistic"),
+  Value = c(test_statistic))
+
+##replace NA with zero 
+ICTMM_full_edited_wide_add<-ICTMM_full_edited_wide%>%mutate(Saliva_Positive=ifelse(is.na(Saliva_Positive),0,Saliva_Positive),Swab_Positive=ifelse(is.na(Swab_Positive),0,Swab_Positive))
+
+##add column for Biofire RP 2.1 detection
+ICTMM_full_edited_wide_add<-ICTMM_full_edited_wide_add%>%mutate(Biofire.RP2.1=1)
+
+## add column
+ICTMM_full_edited_wide_add<-ICTMM_full_edited_wide_add%>%mutate(Detection= case_when(
+    Saliva_Positive + Swab_Positive == 2 ~ "Positive Both",
+    Saliva_Positive + Swab_Positive == 1 & Saliva_Positive == 1 ~ "Saliva Positive, Swab Negative",
+    Saliva_Positive + Swab_Positive == 1 & Swab_Positive == 1 ~ "Saliva Negative, Swab Positive",
+    Saliva_Positive + Swab_Positive == 0 ~ "Both Negative",
+    TRUE ~ NA_character_))
+
+##RENAME column
+ICTMM_full_edited_wide_add<-ICTMM_full_edited_wide_add%>%mutate(Saliva=Saliva_Positive,Swab=Swab_Positive)
+
+##compare Biofire with saliva
+contingency_table_biofire.vs.saliva <- table(ICTMM_full_edited_wide_add$Biofire.RP2.1, ICTMM_full_edited_wide_add$Saliva)
+colnames(contingency_table_biofire.vs.saliva) <- c("Saliva_Negative", "Saliva_Positive")
+rownames(contingency_table_biofire.vs.saliva) <- c("Biofire_Positive")
+print(contingency_table_biofire.vs.saliva)
+write.csv(contingency_table_biofire.vs.saliva,"contigency_table_biofire.vs.saliva.csv")
+
+##compare Biofire with swab
+contingency_table_biofire.vs.swab <- table(ICTMM_full_edited_wide_add$Biofire.RP2.1, ICTMM_full_edited_wide_add$Swab)
+colnames(contingency_table_biofire.vs.swab) <- c("Swab_Negative", "Swab_Positive")
+rownames(contingency_table_biofire.vs.swab) <- c("Biofire_Positive")
+print(contingency_table_biofire.vs.swab)
+write.csv(contingency_table_biofire.vs.swab,"contigency_table_biofire.vs.swabs.csv")
+sum(ICTMM_full_edited_wide_add$Swab_Positive)
+
+```
+
+```{r pairwise comparison of viral load, eval=FALSE}
+##convert data to long format first
+ICTMM_full_edited_pivot_long <- ICTMM_full_edited_wide_add %>%
+  pivot_longer(
+    cols = c(`log.viral.load_Oral swab`, log.viral.load_Saliva, `Cq.Mean_Oral swab`, Cq.Mean_Saliva),
+    names_to = c(".value", "Sample_type"),
+    names_sep = "_")
+##times all samples with dilution factor (2:8),except KBSA 082 (1:8), KBSA 036 &216 (1:40)
+ICTMM_full_edited_pivot_long<-ICTMM_full_edited_pivot_long%>%mutate(`Quantity.Mean_Oral swab`=4*`Quantity.Mean_Oral swab`,Quantity.Mean_Saliva=4*Quantity.Mean_Saliva)
+##contniue from here!!!
+ICTMM_full_edited_pivot_long_dah_darab <- ICTMM_full_edited_pivot_long %>%
+  mutate(Quantity.Mean_Saliva = case_when(
+    Sample == "KB 082" ~ Quantity.Mean_Saliva * 2,
+    Sample %in% c("KB 036", "KB 216") ~ Quantity.Mean_Saliva * 10,
+    TRUE ~ Quantity.Mean_Saliva  # Default case to handle all other samples
+  ))
+
+#First, need to check whether normality assumption is met
+##Plot histogram
+hist(ICTMM_full_edited_pivot_long_dah_darab[["log.viral.load"]],breaks = 20,xlim = c(0,20))
+##run Shapiro Wilk test for sample size, for each population
+##p<0.05 indicates deviations from normality assumption
+shapiro.test(subset(ICTMM_full_edited_pivot_long_dah_darab,Sample_type=="Oral swab")$log.viral.load)
+shapiro.test(subset(ICTMM_full_edited_pivot_long_dah_darab,Sample_type=="Saliva")$log.viral.load)
+
+##assume normality assumption met, to run independent student t test of  log.viral.load between saliva and oral swabs
+t_test_result <- t.test(log.viral.load ~ Sample_type,
+                        data = filter(ICTMM_full_edited_pivot_long_dah_darab, Sample_type %in% c("Saliva", "Oral swab")),
+                        alternative = "two.sided",
+                        var.equal = FALSE,
+                        na.action = na.omit)
+print(t_test_result)
+
+##plot boxplot
+saliva_viralload_with_connectedlines<-ggplot(ICTMM_full_edited_pivot_long_dah_darab, aes(x=Sample_type,y=log.viral.load))+
+  geom_boxplot(fill="white",color="black",size=0.8,width=0.5)+
+  geom_signif(comparisons = list(c("Saliva", "Oral swab")), 
+              map_signif_level = TRUE,
+              annotations = "P<0.001",vjust = -1)+
+  ylim(-1,22)+
+  theme_classic()+
+  geom_point(aes(group=Sample),position=position_dodge(width = 0.0), colour="red", size=1.5)+
+  geom_line(aes(group=Sample), position=position_dodge(width = 0.0), colour="red", linewidth=0.5,alpha=0.4)+
+  labs(x="Sample type",title = "Viral load comparison",y="log (copy numbers/uL)")+
+  theme(axis.text.x=element_text(angle=45,hjust = 1),plot.title = element_text(hjust = 0.5))
+ggsave("saliva_viral_load_with_connectedlines.png",plot = saliva_viralload_with_connectedlines,bg="white",width = 6,height = 4,dpi = 350)
+
+
+##summary for description
+ICTMM_full_edited_pivot_long_summary<-ICTMM_full_edited_pivot_long_dah_darab%>%group_by(Sample_type)%>%summarise(log_viral_load=mean(log.viral.load,na.rm = TRUE),                                        log_viral_load_sd=sd(log.viral.load,na.rm=TRUE))%>%ungroup()
+write.csv(ICTMM_full_edited_pivot_long_summary,"saliva_viral_load_SUMMARY.csv",row.names = FALSE)
+
+##check ct value t test###continue
+ICTMM_full_edited_pivot_long_dah_darab$Cq.Mean <- as.numeric(as.character(ICTMM_full_edited_pivot_long_dah_darab$Cq.Mean))
+
+
+t_test_result_ctvalue <- t.test(
+  x = ICTMM_full_edited_pivot_long_dah_darab[ICTMM_full_edited_pivot_long_dah_darab$Sample_type == "Oral swab", "Cq.Mean"],
+  y = ICTMM_full_edited_pivot_long_dah_darab[ICTMM_full_edited_pivot_long_dah_darab$Sample_type == "Saliva", "Cq.Mean"]
+)$p.value
+print(t_test_result_ctvalue)
+
+##plot boxplot
+saliva_ct.value_pairwise_with_connectedlines<-ggplot(ICTMM_full_edited_pivot_long_dah_darab, aes(x=Sample_type,y=Cq.Mean))+
+  geom_boxplot(fill="white",color="black",size=0.8,width=0.5)+
+  geom_signif(comparisons = list(c("Saliva", "Oral swab")), 
+              map_signif_level = TRUE,
+              annotations = "P<0.001",vjust = -1)+
+  ylim(10,45)+
+  theme_classic()+
+  geom_point(aes(group=Sample),position=position_dodge(width = 0.0), colour="red", size=1.5)+
+  geom_line(aes(group=Sample), position=position_dodge(width = 0.0), colour="red", linewidth=0.5,alpha=0.4)+
+  labs(x="Sample type",title = "Ct value comparison",y="Mean Ct value")+
+  theme(axis.text.x=element_text(angle=45,hjust = 1),plot.title = element_text(hjust = 0.5))
+ggsave("saliva_ct_value_pairwise_withconnectedlines.png",plot = saliva_ct.value_pairwise_with_connectedlines,bg="white",width = 6,height = 4,dpi = 350)
+
+##summary for description
+ICTMM_full_edited_pivot_long_dah_darab_summary<-ICTMM_full_edited_pivot_long_dah_darab%>%group_by(Sample_type)%>%summarise(Mean.ct.value=mean(Cq.Mean,na.rm = TRUE),                                        Ct.sd=sd(Cq.Mean,na.rm=TRUE))%>%ungroup()
+write.csv(ICTMM_full_edited_pivot_long_dah_darab_summary,"saliva_Ctvalue_pairwise_SUMMARY.csv",row.names = FALSE)
+
+```
+
+```{r ct value plot,eval=FALSE}
+##to plot y axis (in centre) with separate x axis for each sample type
+##to reshape df back to wide format
+ICTMM_full_pairwise_filtered<-ICTMM_full_edited_pivot_long_dah_darab%>%select(c(Sample:Quantity.Mean_Saliva,Sample_type,log.viral.load,Cq.Mean))
+ICTMM_full_pairwise_filtered_wide<-ICTMM_full_pairwise_filtered%>%pivot_wider(names_from = Sample_type,names_prefix = "Mean.Ct.value",values_from = Cq.Mean,id_cols = Sample)
+
+##convert data type to numeric
+ICTMM_full_pairwise_filtered_wide$Mean.Ct.valueSaliva <- as.numeric(as.character(ICTMM_full_pairwise_filtered_wide$Mean.Ct.valueSaliva))
+ICTMM_full_pairwise_filtered_wide$`Mean.Ct.valueOral swab` <- as.numeric(as.character(ICTMM_full_pairwise_filtered_wide$`Mean.Ct.valueOral swab`))
+str(ICTMM_full_pairwise_filtered_wide$Mean.Ct.valueSaliva)
+str(ICTMM_full_pairwise_filtered_wide$`Mean.Ct.valueOral swab`)
+invert_saliva_df<-ICTMM_full_pairwise_filtered_wide%>%mutate(Mean.Ct.valueSaliva = -Mean.Ct.valueSaliva)
+
+##calculate mean Ct value
+mean_all_ctvalues <- ICTMM_full_pairwise_filtered_wide %>%
+  summarise(
+    MeanAllSaliva = mean(Mean.Ct.valueSaliva, na.rm = TRUE),
+    MeanAllOralSwab = mean(`Mean.Ct.valueOral swab`, na.rm = TRUE,))
+mean_ct_saliva<-mean_all_ctvalues$MeanAllSaliva
+mean_ct_swab<-mean_all_ctvalues$MeanAllOralSwab
+
+##PLOT
+##plot new
+##contniue with stupid plot later, need to plot smoothed line for the mean
+ctvalue_saliva_swab_update_legend<- ggplot(data = ICTMM_full_pairwise_filtered_wide, aes(x = Sample)) +
+  geom_col(aes(y = Mean.Ct.valueSaliva, fill = "Saliva")) +
+  geom_col(aes(y = -`Mean.Ct.valueOral swab`, fill = "Oral Swab")) +
+  theme_classic() +
+  labs(y = "Ct Values") +
+  coord_flip() +
+  ylim(-45, 45) +
+  scale_y_continuous(labels = abs) +
+  labs(x = "", title = "Ct value of SARS CoV-2 N gene: saliva vs oral swab") +
+  scale_fill_manual("Sample Type", values = c("Saliva" = "black", "Oral Swab" = "darkgray")) +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "bottom")+
+  geom_hline(yintercept = mean_ct_saliva, linetype = "solid", color = "darkred") +
+  geom_hline(yintercept = -mean_ct_swab, linetype = "solid", color = "darkred") +
+  geom_hline(yintercept = 35, linetype = "dashed", color = "darkred") +
+  geom_hline(yintercept = -35, linetype = "dashed", color = "darkred")
+  
+ggsave("ctvalue_saliva_swab_update2.png",plot = ctvalue_saliva_swab_update_legend,bg="white",width = 7,height = 5,dpi = 350)
+
+
+```
+
+```{r correlation ct value, eval=FALSE}
+##determine normality first for each ct value group
+
+hist(ICTMM_full_pairwise_filtered_wide[["Mean.Ct.valueOral swab"]],breaks=100,xlim=c(0,40))
+hist(ICTMM_full_pairwise_filtered_wide[["Mean.Ct.valueSaliva"]],breaks=100,xlim=c(0,40))
+##run Shapiro Wilk test for sample size, for each population
+##p<0.05 indicates deviations from normality assumption
+shapiro.test(subset(ICTMM_full_pairwise_filtered,Sample_type=="Oral swab")$log.viral.load)
+shapiro.test(subset(ICTMM_full_pairwise_filtered,Sample_type=="Saliva")$log.viral.load)
+##normality assumption is met, to use pearson correlation
+
+##perform pearson correlation
+ictmm_correlation<-ICTMM_full_pairwise_filtered_wide%>%na.omit()
+cor(ictmm_correlation$`Mean.Ct.valueOral swab`, ictmm_correlation$Mean.Ct.valueSaliva, method = 'pearson')
+
+
+
+
+
+```
+
+```{r Bland Altmann plot, for mean difference, eval=FALSE}
+##CREATE COLUMNS FOR AVERAGE AND DIFFERENCES
+ICTMM_full_pairwise_filtered_wide_baplot <- ICTMM_full_pairwise_filtered_wide %>%
+  mutate(Ct.average = round((Mean.Ct.valueSaliva + `Mean.Ct.valueOral swab`) / 2, digits = 2),Ct.differences = `Mean.Ct.valueOral swab`-Mean.Ct.valueSaliva) %>%
+  ungroup()
+##MEAN BIASE, 95% CI
+mean_bias<-mean(ICTMM_full_pairwise_filtered_wide_baplot$Ct.differences,na.rm=TRUE)
+lower_loa <- mean_bias - 1.96*sd(ICTMM_full_pairwise_filtered_wide_baplot$Ct.differences,na.rm = TRUE)
+upper_loa <- mean_bias + 1.96*sd(ICTMM_full_pairwise_filtered_wide_baplot$Ct.differences,na.rm = TRUE)
+sd_diff <- sd(ICTMM_full_pairwise_filtered_wide_baplot$Ct.differences, na.rm = TRUE)
+n <- sum(!is.na(ICTMM_full_pairwise_filtered_wide_baplot$Ct.differences))
+##calculate SEM
+sem <- sd_diff / sqrt(n)
+t_value <- qt(0.975, df = n - 1)
+# Calculate the margin of error
+margin_error <- t_value * sem
+# Calculate the confidence interval
+ci_lower <- mean_bias - margin_error
+ci_upper <- mean_bias + margin_error
+# Display the results
+cat("95% Confidence Interval for the mean difference of Ct values: [", ci_lower, ", ", ci_upper, "]", "\n")
+
+hist(ICTMM_full_pairwise_filtered_wide_baplot[["Ct.differences"]],breaks = 50,xlim = c(0,20))
+
+##plot bland altmann plot to visualize mean differences and average 
+BAPLOT<-ggplot(ICTMM_full_pairwise_filtered_wide_baplot, aes(x = Ct.average, y = Ct.differences)) +
+  geom_point(size=2,color="black") +
+  geom_hline(yintercept = mean_bias) +
+  geom_hline(yintercept = lower_loa, color = "darkred", linetype="dashed") +
+  geom_hline(yintercept = upper_loa, color = "darkred", linetype="dashed") +
+    geom_text(aes(x = 32, y = mean_bias + 0.2, label = paste("Mean difference =", round(mean_bias, 2))), color = "black", vjust = 1.5)+
+  geom_text(aes(x = 32, y = 21.18, label = "Upper LoA = 21.18"), vjust = -0.5, color = "black") +
+  geom_text(aes(x = 32, y = -9.31, label = "Lower LoA = -9.31"), vjust = -0.5, color = "black")+
+  ggtitle("Bland Altmann plot for N gene Ct values") +
+  ylab("Ct value differences") +
+  xlab("Average Ct value")+
+  theme_classic()+
+  theme(plot.title = element_text(hjust = 0.5))
+ggsave("BAplot.png",plot = BAPLOT,bg="white",width = 6,height = 5,dpi = 350)
+
+```
+
+```{r ICTMM - sIgA seroprevalence, eval=FALSE}
+IgA.data<-read.csv("/Users/Faez/Folder_yoy/RA_TIDREC UM 2023/Realtime PCR_NCOV/Quantstudio 5/ICTMM - Project/Data_analysis/sIgA levels_ICTMM.csv")
+IgA.merge.data<-full_join(ICTMM_full_edited_wide,IgA.data,by="Sample")
+IgA.merge.data.filtered<-IgA.merge.data%>%filter(Sample!="KB 034")
+IgA.Ct.saliva.only<-IgA.merge.data.filtered%>%select(Sample,Cq.Mean_Saliva,RAW,CALCULATED.RATIO)
+IgA.Ct.saliva.only<-IgA.Ct.saliva.only%>%
+  mutate(Saliva.positive=case_when(Cq.Mean_Saliva<=35 ~ "Positive",
+                                   TRUE ~ "Negative"))
+IgA.Ct.saliva.positve.saliva<-IgA.Ct.saliva.only%>%filter(Saliva.positive=="Positive")
+IgA.Ct.saliva.positve.saliva <- IgA.Ct.saliva.positve.saliva %>%
+  mutate_all(~replace(., is.na(.), 0))
+IgA.Ct.saliva.positve.saliva<-IgA.Ct.saliva.positve.saliva%>%relocate(Saliva.positive,.after = Cq.Mean_Saliva)
+
+##determine samples with negative detection from IgA
+IgA.detection<-IgA.Ct.saliva.positve.saliva%>%
+  mutate(mucosalIgA.detection=case_when(RAW>0.0319 ~ "Positive",
+                                        TRUE~ "Negative"))
+##summarize seroprevalence
+IgA.detection.summary<-IgA.detection%>%group_by(mucosalIgA.detection)%>%
+  summarise(IgA.serodetection=n())%>%ungroup()
+total_IgA_serodetection <- sum(IgA.detection.summary$IgA.serodetection, na.rm = TRUE)
+IgA.detection.summary<-IgA.detection.summary%>%group_by(IgA.serodetection)%>%mutate(IgA.detection=round((IgA.serodetection/total_IgA_serodetection)*100,2))%>%ungroup()
+write.csv(IgA.detection.summary,"Summary.IgA.detection.csv",row.names = FALSE)
+
+
+```
+
+```{r ICTMM - correlation between normalized IgA vs salivary Ct values, eval=FALSE}
+##plot dot plot (check normality first to determine whether pearson or spearman correlation to be used)
+str(IgA.Ct.saliva.positve.saliva)
+IgA.Ct.saliva.positve.saliva <- IgA.Ct.saliva.positve.saliva %>%
+  mutate(Cq.Mean_Saliva = as.numeric(Cq.Mean_Saliva))
+hist(IgA.Ct.saliva.positve.saliva$Cq.Mean_Saliva, xlim = c(0, 40), breaks=50,main = "Histogram of Cq.Mean_Saliva", xlab = "Cq.Mean_Saliva", ylab = "Frequency")
+hist(IgA.Ct.saliva.positve.saliva[["CALCULATED.RATIO"]],breaks=50,xlim=c(0,8))
+shapiro.test(IgA.Ct.saliva.positve.saliva$Cq.Mean_Saliva)
+shapiro.test(IgA.Ct.saliva.positve.saliva$CALCULATED.RATIO)
+
+##DATA NOT normally distributed, to use spearman correlation
+spearman_corr<-cor(IgA.Ct.saliva.positve.saliva$Cq.Mean_Saliva, IgA.Ct.saliva.positve.saliva$CALCULATED.RATIO, method = "spearman")
+
+correlation_plot<-ggplot(IgA.Ct.saliva.positve.saliva, aes(x = Cq.Mean_Saliva, y = CALCULATED.RATIO)) +
+  geom_point() +
+  theme_classic()+
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_smooth(method = "lm", se = FALSE, color = "darkred") +
+  annotate("text", x = 27, y = 4.5, label = paste("Spearman correlation: ", round(spearman_corr, 2)), color = "black") +
+  labs(title = "Ct value vs IgA from saliva samples", x = "Ct value of N gene from saliva samples", y = "Ratio of Anti S Mucosal IgA levels")
+
+##how about the correlation of these data based on severity (using Ct = 25 as threshold, value lesser than 25 is considered as severe)
+IgA.Ct.saliva.positve.saliva.severe<-IgA.Ct.saliva.positve.saliva%>%filter(Cq.Mean_Saliva<=25)
+spearman_corr_severe<-cor(IgA.Ct.saliva.positve.saliva.severe$Cq.Mean_Saliva, IgA.Ct.saliva.positve.saliva.severe$CALCULATED.RATIO, method = "spearman")
+##for less severe
+IgA.Ct.saliva.positve.saliva.less.severe<-IgA.Ct.saliva.positve.saliva%>%filter(Cq.Mean_Saliva>25)
+spearman_corr_less_severe<-cor(IgA.Ct.saliva.positve.saliva.less.severe$Cq.Mean_Saliva, IgA.Ct.saliva.positve.saliva.less.severe$CALCULATED.RATIO, method = "spearman")
+
+##plot both
+ggplot(IgA.Ct.saliva.positve.saliva.severe, aes(x = Cq.Mean_Saliva, y = CALCULATED.RATIO)) +
+  geom_point() +
+  theme_classic()+
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_smooth(method = "lm", se = FALSE, color = "darkred") +
+  annotate("text", x = 27, y = 4.5, label = paste("Spearman correlation: ", round(spearman_corr_severe, 2)), color = "black") +
+  labs(title = "Ct value vs IgA from saliva samples", x = "Ct value of N gene from saliva samples", y = "Normalized IgA levels")
+
+ggplot(IgA.Ct.saliva.positve.saliva.less.severe, aes(x = Cq.Mean_Saliva, y = CALCULATED.RATIO)) +
+  geom_point() +
+  theme_classic()+
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_smooth(method = "lm", se = FALSE, color = "darkred") +
+  annotate("text", x = 27, y = 4.5, label = paste("Spearman correlation: ", round(spearman_corr_less_severe, 2)), color = "black") +
+  labs(title = "Ct value vs IgA from saliva samples", x = "Ct value of N gene from saliva samples", y = "Normalized IgA levels")+
+  ylim(0,1.5)
+ggsave("correlation_ct_igA.png",plot=correlation_plot,width = 6,height = 4,dpi = 350,bg="white")
+
+```
+
